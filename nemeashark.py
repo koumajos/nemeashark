@@ -25,8 +25,27 @@ HEADER = [
     "SRC_PORT",
     "PACKETS",
     "BYTES",
+    "TIME_FIRST",
+    "TIME_LAST",
+    "PROTOCOL",
+    "TCP_FLAGS",
 ]
-TYPES = ["mac", "ip", "port", "mac", "ip", "port", "packets", "bytes"]
+HEADER_BASICPLUS = ["IP_TTL", "IP_FLG", "TCP_WIN", "TCP_OPT", "TCP_MSS", "TCP_SYN_SIZE"]
+TYPES = [
+    "mac",
+    "ip",
+    "port",
+    "mac",
+    "ip",
+    "port",
+    "packets",
+    "bytes",
+    "time",
+    "time",
+    "protocol",
+    "tcl_flags",
+]
+TYPES_BASICPLUS = ["ttl", "ip_flg", "tcp_win", "tcp_opt", "tcp_mss", "tcp_syn_size"]
 COLORS = {
     "red": bg.da_red,
     "yellow": bg.da_yellow,
@@ -100,7 +119,7 @@ def parse_arguments(dependency=False):
         "-n",
         help="Number of flows that will be showed with one header. Default value is 46 lines, that is approximately one less command page.",
         type=int,
-        default=46,
+        default=44,
     )
     parser.add_argument(
         "-s",
@@ -114,7 +133,11 @@ def parse_arguments(dependency=False):
     return arg
 
 
-def color_output(data, marks, size):
+def color_output(data, marks, size, header_size):
+    if header_size == len(HEADER):
+        types = TYPES
+    else:
+        types = TYPES + TYPES_BASICPLUS
     dic_marks = {}
     for mark in marks:
         tmp = mark.split(":")
@@ -130,15 +153,15 @@ def color_output(data, marks, size):
     bg_color = True
     for i in range(0, len(data)):
         if bg_color is True:
-            for j in range(0, 8):
+            for j in range(0, header_size):
                 start = ""
                 end = ""
                 if j == 0:
                     start = f"{bg.da_green}"
-                if j == 7:
+                if j == header_size - 1:
                     end = f"{bg.rs}"
-                if TYPES[j] in dic_marks:
-                    for value in dic_marks[TYPES[j]]:
+                if types[j] in dic_marks:
+                    for value in dic_marks[types[j]]:
                         if value[0] == data[i][j]:
                             tmp = COLORS[value[1]]
                             start += f"{bg.rs}{tmp}"
@@ -146,15 +169,15 @@ def color_output(data, marks, size):
                 data[i][j] = f"{start}{data[i][j]}{end}"
             bg_color = False
         else:
-            for j in range(0, 8):
+            for j in range(0, header_size):
                 start = ""
                 end = ""
                 if j == 0:
                     start = f"{bg.da_cyan}"
-                if j == 7:
+                if j == header_size - 1:
                     end = f"{bg.rs}"
-                if TYPES[j] in dic_marks:
-                    for value in dic_marks[TYPES[j]]:
+                if types[j] in dic_marks:
+                    for value in dic_marks[types[j]]:
                         if value[0] == data[i][j]:
                             tmp = COLORS[value[1]]
                             start += f"{bg.rs}{tmp}"
@@ -164,10 +187,9 @@ def color_output(data, marks, size):
     return data
 
 
-def create_output(data, marks, size):
-    # table = columnar(data, HEADER, no_borders=True)
-    data = color_output(data, marks, size)
-    table = tabulate(data, headers=HEADER)
+def create_output(data, marks, size, header):
+    data = color_output(data, marks, size, len(header))
+    table = tabulate(data, headers=header)
     print(table)
 
 
@@ -220,6 +242,7 @@ def main():
     arg = parse_arguments()
     rec, trap = load_pytrap(sys.argv)
     biflow = None
+    basicplus = None
 
     array = []
     while True:  # main loop for load ip-flows from interfaces
@@ -242,26 +265,59 @@ def main():
             except AttributeError as e:
                 biflow = False
                 # print("Use flow")
+        if basicplus is None:
+            try:
+                packets = rec.IP_TTL
+                basicplus = True
+                print("basicplus enabled")
+                # print("Use biflow")
+            except AttributeError as e:
+                basicplus = False
+                # print("Use flow")
 
         if arg.filter is not None and filter_output(rec, arg.filter) is True:
             continue
 
+        header = HEADER
+        packets = int(rec.PACKETS)
+        byte = int(rec.BYTES)
+        tcp_flags = str(rec.TCP_FLAGS)
+        if biflow is True:
+            packets += int(rec.PACKETS_REV)
+            byte += int(rec.BYTES_REV)
+            tcp_falgs = f"{tcp_flags};{rec.TCP_FLAGS_REV}"
         d = [
-            str(rec.DST_MAC),
-            str(rec.DST_IP),
-            str(rec.DST_PORT),
             str(rec.SRC_MAC),
             str(rec.SRC_IP),
             str(rec.SRC_PORT),
-            str(rec.PACKETS),
-            str(rec.BYTES),
+            str(rec.DST_MAC),
+            str(rec.DST_IP),
+            str(rec.DST_PORT),
+            str(packets),
+            str(byte),
+            str(rec.TIME_FIRST),  # TODO: convert to UNIX time
+            str(rec.TIME_LAST),  # TODO: convert to UNIX time
+            str(rec.PROTOCOL),
+            tcp_flags,
         ]
+        if basicplus is True:
+            d_bp = [
+                f"{str(rec.IP_TTL)};{str(rec.IP_TTL_REV)}",
+                f"{rec.IP_FLG};{rec.IP_FLG_REV}",
+                f"{rec.TCP_WIN};{rec.TCP_WIN_REV}",
+                f"{rec.TCP_OPT};{rec.TCP_OPT_REV}",
+                f"{rec.TCP_MSS};{rec.TCP_MSS_REV}",
+                f"{rec.TCP_SYN_SIZE}",
+            ]
+            d = d + d_bp
+            header = header + HEADER_BASICPLUS
+
         array.append(d)
         if arg.n != 0 and len(array) == arg.n:
-            create_output(array, arg.mark, arg.n)
+            create_output(array, arg.mark, arg.n, header)
             array = []
 
-    create_output(array, arg.mark, arg.n)
+    create_output(array, arg.mark, arg.n, header)
     trap.finalize()  # Free allocated TRAP IFCs
 
 
