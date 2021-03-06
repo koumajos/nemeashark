@@ -130,7 +130,7 @@ def parse_arguments(dependency=False):
     parser.add_argument(
         "-m",
         "--mark",
-        help="Mark some specific value. Example 1: ip:192.168.0.1 will mark every ip addres 192.168.0.1 with RED. Posible types: ip|mac|port|packets|bytes",
+        help="Mark some specific value. Example 1: ip:192.168.0.1 will mark every ip addres 192.168.0.1 with RED. Example 2: ip:192.168.0.1:yellow will mark every ip addres 192.168.0.1 with YELLOW. Posible types: ip|mac|port|packets|bytes. Posible colors: red, yellow, blue, magenta",
         type=str,
         nargs="+",
         metavar="<type:value>",
