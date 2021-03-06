@@ -17,12 +17,12 @@ from sty import fg, bg, ef, rs
 import pytrap
 
 HEADER = [
-    "DST_MAC",
-    "DST_IP",
-    "DST_PORT",
     "SRC_MAC",
     "SRC_IP",
     "SRC_PORT",
+    "DST_MAC",
+    "DST_IP",
+    "DST_PORT",
     "PACKETS",
     "BYTES",
     "TIME_FIRST",
