@@ -12,6 +12,8 @@ Installation nemeashark is simple.
 
 I recomand you to use nemeashark with `| less -RS` , R parameter will allows colors and -S will allows less command to extend output outside the screen (use keyboard arrows to read overflow output).
 
+**Supported plugins:** basic, basicplus, http
+
 ### Parameters
 
 - `-p --plugin <plugin> [<plugin> ...]` Plugins setted in ipfixprobe of nemea system.
