@@ -4,14 +4,14 @@
 
 # Standard libraries imports
 import sys
+import csv
 import ipaddress
 import argparse
 from argparse import RawTextHelpFormatter
+from datetime import datetime
 
 from tabulate import tabulate
 from sty import fg, bg, ef, rs
-
-# Third party imports
 
 # NEMEA system library
 import pytrap
@@ -31,6 +31,15 @@ HEADER = [
     "TCP_FLAGS",
 ]
 HEADER_BASICPLUS = ["IP_TTL", "IP_FLG", "TCP_WIN", "TCP_OPT", "TCP_MSS", "TCP_SYN_SIZE"]
+HEADER_HTTP = [
+    "HTTP_REQUEST_METHOD",
+    "HTTP_REQUEST_HOST",
+    "HTTP_REQUEST_URL",
+    "HTTP_REQUEST_AGENT",
+    "HTTP_REQUEST_REFERER",
+    "HTTP_RESPONSE_STATUS_CODE",
+    "HTTP_RESPONSE_CONTENT_TYPE ",
+]
 TYPES = [
     "mac",
     "ip",
@@ -46,6 +55,15 @@ TYPES = [
     "tcl_flags",
 ]
 TYPES_BASICPLUS = ["ttl", "ip_flg", "tcp_win", "tcp_opt", "tcp_mss", "tcp_syn_size"]
+TYPES_HTTP = [
+    "method",
+    "host",
+    "url",
+    "useragent",
+    "referer",
+    "status_code",
+    "content_type",
+]
 COLORS = {
     "red": bg.da_red,
     "yellow": bg.da_yellow,
@@ -99,6 +117,16 @@ def parse_arguments(dependency=False):
     parser.add_argument("-vvv", help="Be even more verbose.", action="store_true")
 
     parser.add_argument(
+        "-p",
+        "--plugins",
+        help="Plugins of ipfixprobe of nemea system",
+        type=str,
+        nargs="+",
+        metavar="plugin",
+        default=[],
+    )
+
+    parser.add_argument(
         "-m",
         "--mark",
         help="Mark some specific value. Example 1: ip:192.168.0.1 will mark every ip addres 192.168.0.1 with RED. Posible types: ip|mac|port|packets|bytes",
@@ -133,11 +161,7 @@ def parse_arguments(dependency=False):
     return arg
 
 
-def color_output(data, marks, size, header_size):
-    if header_size == len(HEADER):
-        types = TYPES
-    else:
-        types = TYPES + TYPES_BASICPLUS
+def color_output(data, marks, size, header_size, types):
     dic_marks = {}
     for mark in marks:
         tmp = mark.split(":")
@@ -187,8 +211,8 @@ def color_output(data, marks, size, header_size):
     return data
 
 
-def create_output(data, marks, size, header):
-    data = color_output(data, marks, size, len(header))
+def create_output(data, marks, size, header, types):
+    data = color_output(data, marks, size, len(header), types)
     table = tabulate(data, headers=header)
     print(table)
 
@@ -237,6 +261,76 @@ def filter_output(rec, filters):
     return True
 
 
+def basic_plugin(rec, biflow):
+    packets = int(rec.PACKETS)
+    byte = int(rec.BYTES)
+    tcp_flags = str(rec.TCP_FLAGS)
+    if biflow is True:
+        packets += int(rec.PACKETS_REV)
+        byte += int(rec.BYTES_REV)
+        tcp_falgs = f"{tcp_flags};{rec.TCP_FLAGS_REV}"
+    protocol = str(rec.PROTOCOL)
+    with open("data/protocol_numbers.csv") as csvfile:
+        spamreader = csv.reader(csvfile)
+        for row in spamreader:
+            if row[0] == protocol:
+                protocol = row[1]
+    d = [
+        str(rec.SRC_MAC),
+        str(rec.SRC_IP),
+        str(rec.SRC_PORT),
+        str(rec.DST_MAC),
+        str(rec.DST_IP),
+        str(rec.DST_PORT),
+        str(packets),
+        str(byte),
+        datetime.utcfromtimestamp(float(str(rec.TIME_FIRST))).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )[:-4],
+        datetime.utcfromtimestamp(float(str(rec.TIME_LAST))).strftime(
+            "%Y-%m-%dT%H:%M:%S.%fZ"
+        )[:-4],
+        protocol,
+        tcp_flags,
+    ]
+    return d
+
+
+def basicplus_plugin(rec):
+    return [
+        f"{str(rec.IP_TTL)};{str(rec.IP_TTL_REV)}",
+        f"{rec.IP_FLG};{rec.IP_FLG_REV}",
+        f"{rec.TCP_WIN};{rec.TCP_WIN_REV}",
+        f"{rec.TCP_OPT};{rec.TCP_OPT_REV}",
+        f"{rec.TCP_MSS};{rec.TCP_MSS_REV}",
+        f"{rec.TCP_SYN_SIZE}",
+    ]
+
+
+def http_plugin(rec):
+    return [
+        str(rec.HTTP_REQUEST_METHOD),
+        str(rec.HTTP_REQUEST_HOST),
+        str(rec.HTTP_REQUEST_URL),
+        str(rec.HTTP_REQUEST_AGENT),
+        str(rec.HTTP_REQUEST_REFERER),
+        str(rec.HTTP_RESPONSE_STATUS_CODE),
+        str(rec.HTTP_RESPONSE_CONTENT_TYPE),
+    ]
+
+
+def make_header(plugins):
+    header = HEADER
+    types = TYPES
+    if "basicplus" in plugins:
+        header = header + HEADER_BASICPLUS
+        types = types + TYPES_BASICPLUS
+    if "http" in plugins:
+        header = header + HEADER_HTTP
+        types = types + TYPES_HTTP
+    return header, types
+
+
 def main():
     """Main function of the module."""
     arg = parse_arguments()
@@ -244,6 +338,7 @@ def main():
     biflow = None
     basicplus = None
 
+    header, types = make_header(arg.plugins)
     array = []
     while True:  # main loop for load ip-flows from interfaces
         try:  # load IP flow from IFC interface
@@ -256,7 +351,6 @@ def main():
         if len(data) <= 1:
             break
         rec.setData(data)  # set the IP flow to created tempalte
-
         if biflow is None:
             try:
                 packets = rec.PACKETS_REV
@@ -265,59 +359,22 @@ def main():
             except AttributeError as e:
                 biflow = False
                 # print("Use flow")
-        if basicplus is None:
-            try:
-                packets = rec.IP_TTL
-                basicplus = True
-                print("basicplus enabled")
-                # print("Use biflow")
-            except AttributeError as e:
-                basicplus = False
-                # print("Use flow")
 
         if arg.filter is not None and filter_output(rec, arg.filter) is True:
             continue
 
-        header = HEADER
-        packets = int(rec.PACKETS)
-        byte = int(rec.BYTES)
-        tcp_flags = str(rec.TCP_FLAGS)
-        if biflow is True:
-            packets += int(rec.PACKETS_REV)
-            byte += int(rec.BYTES_REV)
-            tcp_falgs = f"{tcp_flags};{rec.TCP_FLAGS_REV}"
-        d = [
-            str(rec.SRC_MAC),
-            str(rec.SRC_IP),
-            str(rec.SRC_PORT),
-            str(rec.DST_MAC),
-            str(rec.DST_IP),
-            str(rec.DST_PORT),
-            str(packets),
-            str(byte),
-            str(rec.TIME_FIRST),  # TODO: convert to UNIX time
-            str(rec.TIME_LAST),  # TODO: convert to UNIX time
-            str(rec.PROTOCOL),
-            tcp_flags,
-        ]
-        if basicplus is True:
-            d_bp = [
-                f"{str(rec.IP_TTL)};{str(rec.IP_TTL_REV)}",
-                f"{rec.IP_FLG};{rec.IP_FLG_REV}",
-                f"{rec.TCP_WIN};{rec.TCP_WIN_REV}",
-                f"{rec.TCP_OPT};{rec.TCP_OPT_REV}",
-                f"{rec.TCP_MSS};{rec.TCP_MSS_REV}",
-                f"{rec.TCP_SYN_SIZE}",
-            ]
-            d = d + d_bp
-            header = header + HEADER_BASICPLUS
+        row = basic_plugin(rec, biflow)
+        if "basicplus" in arg.plugins:
+            row = row + basicplus_plugin(rec)
+        if "http" in arg.plugins:
+            row = row + http_plugin(rec)
 
-        array.append(d)
+        array.append(row)
         if arg.n != 0 and len(array) == arg.n:
-            create_output(array, arg.mark, arg.n, header)
+            create_output(array, arg.mark, arg.n, header, types)
             array = []
 
-    create_output(array, arg.mark, arg.n, header)
+    create_output(array, arg.mark, arg.n, header, types)
     trap.finalize()  # Free allocated TRAP IFCs
 
 
