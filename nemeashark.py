@@ -9,6 +9,7 @@ import ipaddress
 import argparse
 from argparse import RawTextHelpFormatter
 from datetime import datetime
+import ipaddress
 
 from tabulate import tabulate
 from sty import fg, bg, ef, rs
@@ -254,6 +255,17 @@ def filter_output(rec, filters):
                         break
                 elif t == "bytes":
                     if str(rec.BYTES) != v:
+                        tmp = False
+                        break
+                elif t == "protocol":
+                    if str(rec.PROTOCOL) != v:
+                        tmp = False
+                        break
+                elif t == "network":
+                    network = ipaddress.ip_network(v)
+                    src_address = ipaddress.ip_address(str(rec.SRC_IP))
+                    dst_address = ipaddress.ip_address(str(rec.DST_IP))
+                    if src_address not in network and dst_address not in network:
                         tmp = False
                         break
         if tmp is True:
