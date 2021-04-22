@@ -14,6 +14,8 @@ import ipaddress
 from tabulate import tabulate
 from sty import fg, bg, ef, rs
 
+from functools import cmp_to_key
+
 # NEMEA system library
 import pytrap
 
@@ -6325,7 +6327,7 @@ def parse_arguments(dependency=False):
     parser.add_argument(
         "-s",
         "--sort",
-        help="Sort n flow (from parameter -n, recomanded usage with -n 0) by criterion. Posible criterions are ip|mac|port|packets|bytes.",
+        help="Sort biflows by criterion. Posible criterions are ip|mac|port|packets|bytes.",
         type=str,
         metavar="<criterion>",
         default=None,
@@ -6528,6 +6530,104 @@ def make_header(plugins):
     return header, types
 
 
+def ip_sort(a, b):
+    if a[1] > b[1]:
+        return 1
+    if a[1] == b[1]:
+        if a[4] > b[4]:
+            return 1
+        if a[4] < b[4]:
+            return -1
+        return 0
+    return -1
+
+
+def mac_sort(a, b):
+    if a[0] > b[0]:
+        return 1
+    if a[0] == b[0]:
+        if a[3] > b[3]:
+            return 1
+        if a[3] < b[3]:
+            return -1
+        return 0
+    return -1
+
+
+def port_sort(a, b):
+
+    br_a_s = a[2].split("(")
+    if len(br_a_s) == 1:
+        r_a_s = int(br_a_s[0])
+        bool_a_s = False
+    else:
+        br_a_s = br_a_s[1].split(")")
+        r_a_s = int(br_a_s[0])
+        bool_a_s = True
+    br_b_s = b[2].split("(")
+    if len(br_b_s) == 1:
+        r_b_s = int(br_b_s[0])
+        bool_b_s = False
+    else:
+        br_b_s = br_b_s[1].split(")")
+        r_b_s = int(br_b_s[0])
+        bool_b_s = True
+    br_a_d = a[5].split("(")
+    if len(br_a_d) == 1:
+        r_a_d = int(br_a_d[0])
+        bool_a_d = False
+    else:
+        br_a_d = br_a_d[1].split(")")
+        r_a_d = int(br_a_d[0])
+        bool_a_d = True
+    br_b_d = b[5].split("(")
+    if len(br_b_d) == 1:
+        r_b_d = int(br_b_d[0])
+        bool_b_d = False
+    else:
+        br_b_d = br_b_d[1].split(")")
+        r_b_d = int(br_b_d[0])
+        bool_b_d = True
+
+    if (bool_a_s is True and bool_a_d is True) or (
+        bool_a_s is False and bool_a_d is False
+    ):
+        if r_a_s < r_a_d:
+            r_a_r = r_a_d
+        else:
+            r_a_r = r_a_s
+    elif bool_a_s is True:
+        r_a_r = r_a_s
+    elif bool_a_d is True:
+        r_a_r = r_a_d
+    else:
+        r_a_r = r_a_s
+
+    if (bool_b_s is True and bool_b_d is True) or (
+        bool_b_s is False and bool_b_d is False
+    ):
+        if r_b_s < r_b_d:
+            r_b_r = r_b_d
+        else:
+            r_b_r = r_b_s
+    elif bool_b_s is True:
+        r_b_r = r_b_s
+    elif bool_b_d is True:
+        r_b_r = r_b_d
+    else:
+        r_b_r = r_b_s
+
+    return r_a_r - r_b_r
+
+
+def packets_sort(a, b):
+    return int(a[6]) - int(b[6])
+
+
+def bytes_sort(a, b):
+    return int(a[7]) - int(b[7])
+
+
 def main():
     """Main function of the module."""
     arg = parse_arguments()
@@ -6567,10 +6667,22 @@ def main():
             row = row + http_plugin(rec)
 
         array.append(row)
-        if arg.n != 0 and len(array) == arg.n:
+        if arg.n != 0 and len(array) == arg.n and arg.sort is None:
             create_output(array, arg.mark, arg.n, header, types)
             array = []
 
+    if arg.sort == "ip":
+        array = sorted(array, key=cmp_to_key(ip_sort))
+    elif arg.sort == "mac":
+        array = sorted(array, key=cmp_to_key(mac_sort))
+    elif arg.sort == "port":
+        array = sorted(array, key=cmp_to_key(port_sort))
+    elif arg.sort == "packets":
+        array = sorted(array, key=cmp_to_key(packets_sort), reverse=True)
+    elif arg.sort == "bytes":
+        array = sorted(array, key=cmp_to_key(bytes_sort), reverse=True)
+    else:
+        pass
     create_output(array, arg.mark, arg.n, header, types)
     trap.finalize()  # Free allocated TRAP IFCs
 
