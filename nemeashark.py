@@ -6420,9 +6420,22 @@ def filter_output(rec, filters):
                         tmp = False
                         break
                 elif t == "port":
-                    if str(rec.DST_PORT) != v and str(rec.SRC_PORT) != v:
-                        tmp = False
-                        break
+                    try:
+                        v = int(v)
+                        if int(rec.DST_PORT) != v and int(rec.SRC_PORT) != v:
+                            tmp = False
+                            break
+                    except:
+                        x = False
+                        if int(rec.DST_PORT) in PORTS:
+                            if PORTS[int(rec.DST_PORT)] == v:
+                                x = True
+                        if int(rec.SRC_PORT) in PORTS:
+                            if PORTS[int(rec.SRC_PORT)] == v:
+                                x = True
+                        if x == False:
+                            tmp = False
+                            break
                 elif t == "packets":
                     if str(rec.PACKETS) != v:
                         tmp = False
@@ -6432,9 +6445,15 @@ def filter_output(rec, filters):
                         tmp = False
                         break
                 elif t == "protocol":
-                    if str(rec.PROTOCOL) != v:
-                        tmp = False
-                        break
+                    try:
+                        v = int(v)
+                        if int(rec.PROTOCOL) != v:
+                            tmp = False
+                            break
+                    except:
+                        if PROTOCOLS[str(rec.PROTOCOL)] != v.upper():
+                            tmp = False
+                            break
                 elif t == "network":
                     network = ipaddress.ip_network(v)
                     src_address = ipaddress.ip_address(str(rec.SRC_IP))
